@@ -21,6 +21,12 @@ internal static class UiSmokeTests
                 if (output.Items.Count == 0 || !output.Items[0].ToString().StartsWith(expected[i - 1]))
                     throw new Exception("按钮 " + i + " 输出错误");
             }
+            input.Text = "int $y$; $y$:=4*2";
+            typeof(Form1).GetMethod("button3_Click", BindingFlags.Instance | BindingFlags.NonPublic)
+                .Invoke(form, new object[] { null, EventArgs.Empty });
+            if (!output.Items[0].ToString().Contains("$y$.type") ||
+                !output.Items[1].ToString().Contains("T0"))
+                throw new Exception("再次分析时没有重置状态");
         }
         Console.WriteLine("4 个窗口入口检查通过");
     }
