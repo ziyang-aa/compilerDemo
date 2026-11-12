@@ -121,6 +121,10 @@
     <value>17, 17</value>
   </metadata>
   <data name="textBox1.Text" xml:space="preserve">
-    <value>bool $ju$; int $sq9$, $e$; int $v$;  $v$:=3; $ju$:=false; $sq9$:=53; $e$:=88; if(78 / $e$&lt;61 / 54 or not 57&lt;&gt;84*1){$e$:=$sq9$*$v$}else {$v$:=$e$*$sq9$;$e$:=$ju$ / 11}; $sq9$:=$v$*4 / 89; $ju$:=$e$*$v$==13*$e$*$e$</value>
+    <value>int $x$; bool $done$; string $text$;
+$x$ := 2 + 3 * 4;
+$text$ := "ab" * 2 + "c";
+while ($x$ &gt; 0) : { $x$ := $x$ - 1 };
+if ($x$ == 0 and not false) { $done$ := true } else { $done$ := false }</value>
   </data>
 </root>
