@@ -30,6 +30,7 @@ namespace compilerDEMO
         private midCodeTable tacTable;
         private node ast;
         private string astDeclareType;
+        private List<node> completedASTNodes = new List<node>();
 
         private bool isDebug = false;
         private void print(string str) { listBox1.Items.Add(str); }
@@ -239,6 +240,21 @@ namespace compilerDEMO
                         str += "  " + child.ToString();
                     }
                 }
+                return str;
+            }
+
+            // 使用原版的括号形式展示根节点和孩子节点的关系。
+            public string toBracketString()
+            {
+                string str = $"({this.root})";
+                if (children.Count == 0) return str;
+
+                str += "(";
+                foreach (node child in children)
+                {
+                    if (child != null) str += child.toBracketString();
+                }
+                str += ")";
                 return str;
             }
 
@@ -1243,6 +1259,7 @@ namespace compilerDEMO
             }
             catch (InvalidOperationException ex)
             {
+                if (tacTable != null) tacTable.dump(listBox1);
                 print("分析错误：" + ex.Message);
             }
         }
@@ -1733,14 +1750,14 @@ namespace compilerDEMO
 
             tacTable.generate("jnz",T.name , "null",(tacTable.NXQ+2).ToString());
             int falseIndex=tacTable.NXQ;
-            tacTable.generate("jump", "null", "null", "0");
+            tacTable.generate("jump", "null", "null", "待回填");
 
 
             match("右括号");
             translateTACNestedStatement();
 
             int exitIndex=tacTable.NXQ;
-            tacTable.generate("jump", "null", "null", "0");
+            tacTable.generate("jump", "null", "null", "待回填");
             tacTable.backpatch(falseIndex, tacTable.NXQ.ToString());
 
             match("else");
@@ -1761,7 +1778,7 @@ namespace compilerDEMO
             match("冒号");
             tacTable.generate("jnz", condition.name, "null", (tacTable.NXQ + 2).ToString());
             int exit = tacTable.NXQ;
-            tacTable.generate("jump", "null", "null", "0");
+            tacTable.generate("jump", "null", "null", "待回填");
             translateTACNestedStatement();
             tacTable.generate("jump", "null", "null", start.ToString());
             tacTable.backpatch(exit, tacTable.NXQ.ToString());
@@ -1787,6 +1804,7 @@ namespace compilerDEMO
                 isDebug = true;
                 listBox1.Items.Clear();
                 listBox2.Items.Clear();
+                completedASTNodes.Clear();
 
                 sourceProgram = textBox1.Text + "#";
                 pointer = 0;
@@ -1803,6 +1821,7 @@ namespace compilerDEMO
             
 
                 print(ast.ToString());
+                print("括号树：" + ast.toBracketString());
 
                 string path = Application.StartupPath + @"\outputAST.txt";
                 ast.saveToTXT(path);
@@ -1810,6 +1829,12 @@ namespace compilerDEMO
             }
             catch (InvalidOperationException ex)
             {
+                if (completedASTNodes.Count > 0)
+                {
+                    print("已完成的 AST 片段：");
+                    foreach (node completedNode in completedASTNodes)
+                        print(completedNode.toBracketString());
+                }
                 print("分析错误：" + ex.Message);
             }
         }
@@ -1838,6 +1863,7 @@ namespace compilerDEMO
 
            node c1= translateASTDeclareStatement();
             match("分号");
+            completedASTNodes.Add(c1);
             // if (!match("分号")) { return; };
 
          node c2=   translateASTA();
@@ -1861,6 +1887,7 @@ namespace compilerDEMO
 
                 node c1=translateASTDeclareStatement();
                 match("分号");
+                completedASTNodes.Add(c1);
                 // if (!match("分号")) { return; };
                 node c2=translateASTA();
 
@@ -1994,29 +2021,35 @@ namespace compilerDEMO
         private node translateASTStatement()
         {
             debug("选择产生式:<语句> → <赋值语句>|<条件语句>");
+            int completedBefore = completedASTNodes.Count;
+            node statement;
 
             if (curentToken.type == "标识符")
             {
 
 
                 debug("推导：<语句> → <赋值语句>");
-                return translateASTAssignmentStatement();
+                statement = translateASTAssignmentStatement();
             }
 
             else if (curentToken.type == "if")
             {
                 debug("推导：<语句> → <条件语句>");
-                return translateASTConditionalStatement();
+                statement = translateASTConditionalStatement();
             }
             else if (curentToken.type == "while")
             {
                 debug("推导：<语句> → <循环语句>");
-                return translateASTWhileStatement();
+                statement = translateASTWhileStatement();
             }
             else
             {
                 throw new InvalidOperationException($"语法错误：语句不能以 {curentToken.type} 开头");
             }
+            // 外层语句完成后，用完整节点替换其内部已经记录的片段。
+            completedASTNodes.RemoveRange(completedBefore, completedASTNodes.Count - completedBefore);
+            completedASTNodes.Add(statement);
+            return statement;
         }
 
         private node translateASTAssignmentStatement()

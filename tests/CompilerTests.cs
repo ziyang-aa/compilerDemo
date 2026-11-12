@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.IO;
 using System.Reflection;
 using System.Windows.Forms;
 using compilerDEMO;
@@ -53,6 +54,10 @@ internal static class CompilerTests
             Check(tac.SequenceEqual(expected), "TAC 条件或循环回填错误：" + String.Join(" | ", tac));
             string[] ast = Run(form, 4, "int $x$; $x$:=9-3-2*4");
             Check(ast[0].Contains("assign  $x$  sub  sub  9  3  mul  2  4"), "AST 优先级或结合性错误");
+            Check(ast[1].StartsWith("括号树：(topLevel)(") &&
+                  ast[1].Contains("(sub)((sub)((9)(3))(mul)((2)(4)))"), "括号树未体现表达式父子关系");
+            Check(File.ReadAllText(Path.Combine(Application.StartupPath, "outputAST.txt")).TrimEnd() == ast[0],
+                  "AST 文件应保留附录要求的前序格式");
 
             tac = Run(form, 3, "bool $b$; $b$:=trueorfalseandnot false");
             Check(tac[1].Contains("(not,") && tac[2].Contains("(and,") && tac[3].Contains("(or,"), "逻辑优先级错误");
@@ -82,6 +87,32 @@ internal static class CompilerTests
             Check(Run(form, 1, "int $x$; $x$:=123").Contains("(整数,123)"), "末尾整数丢失");
             Check(Run(form, 1, "int $x$; $x$:=1#2").Any(x => x.StartsWith("(error,")), "非法 # 被当作结束符");
             Check(Run(form, 3, "int $y$; $y$:=4*2")[1].Contains("T0"), "重复分析未重置临时变量");
+
+            string partial = "int $x$; bool $flag$; $x$:=1; $x$:=$flag$/11";
+            tac = Run(form, 3, partial);
+            Check(tac.Length == 4 && tac[0] == "(0) (declare, int, null, $x$.type)" &&
+                  tac[1] == "(1) (declare, bool, null, $flag$.type)" &&
+                  tac[2] == "(2) (assign, 1, null, $x$)" && tac[3].StartsWith("分析错误："),
+                  "TAC 出错时应先输出已生成的四元式，再输出错误");
+            ast = Run(form, 4, partial);
+            Check(ast.Length == 5 && ast[0] == "已完成的 AST 片段：" &&
+                  ast[1].StartsWith("(declare)((int)") && ast[2].StartsWith("(declare)((bool)") &&
+                  ast[3] == "(assign)(($x$)(1))" && ast[4].StartsWith("分析错误："),
+                  "AST 出错时应保留已完成的声明和语句");
+
+            string partialLoop = "int $x$; $x$:=1; while(true):{$x$:=2; $x$:=false}";
+            tac = Run(form, 3, partialLoop);
+            Check(tac.Any(x => x.Contains("(jump, null, null, 待回填)")) &&
+                  tac.Any(x => x.Contains("(assign, 2, null, $x$)")) && tac.Last().StartsWith("分析错误："),
+                  "循环出错时应保留已生成代码并标记未完成跳转");
+            ast = Run(form, 4, partialLoop);
+            Check(ast.Contains("(assign)(($x$)(2))") && ast.Last().StartsWith("分析错误："),
+                  "嵌套语句中已完成的 AST 片段应保留");
+            ast = Run(form, 4, "int $z$; $z$:=3");
+            Check(ast[0].StartsWith("topLevel") && !ast.Any(x => x.Contains("已完成的 AST 片段")),
+                  "成功分析不应显示前一次的部分结果");
+            syntax = Run(form, 2, "int $q$; $q$:=");
+            Check(!syntax.Any(x => x.Contains("(declare,")), "语法分析不应输出上一次的 TAC");
         }
         Console.WriteLine("通过 " + count + " 项检查");
     }
