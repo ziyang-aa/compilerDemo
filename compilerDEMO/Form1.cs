@@ -32,6 +32,9 @@ namespace compilerDEMO
         private node ast;
         private string astDeclareType;
         private List<node> completedASTNodes = new List<node>();
+        private int completedTACIndex;
+        private int tacNestedDepth;
+        private string currentTACAssignment;
 
         private bool isDebug = false;
         private void print(string str) { listBox1.Items.Add(str); }
@@ -1268,6 +1271,9 @@ namespace compilerDEMO
      
         private void translateTACProgram()
         {
+            completedTACIndex = 0;
+            tacNestedDepth = 0;
+            currentTACAssignment = null;
             debug("推导:<程序> → <变量说明部分> <语句部分>");
             translateTACDeclareSection();
             translateTACStatementSection();
@@ -1416,6 +1422,8 @@ namespace compilerDEMO
             {
                 throw new InvalidOperationException($"语法错误：语句不能以 {curentToken.type} 开头");
             }
+            // 只有完整的顶层语句可以在后续分析失败时安全执行。
+            if (tacNestedDepth == 0) completedTACIndex = tacTable.NXQ;
         }
 
         private void translateTACAssignmentStatement()
@@ -1423,6 +1431,7 @@ namespace compilerDEMO
             debug("推导:<赋值语句> → 标识符 赋值号 <表达式>");
 
             string name = curentToken.value;
+            currentTACAssignment = name;
             match("标识符");
             match("赋值号");
           triple Exp=  translateTACExpression();
@@ -1436,6 +1445,7 @@ namespace compilerDEMO
                 throw new InvalidOperationException("赋值类型不匹配：" + name);
 
             tacTable.generate("assign", Exp.name, "null", name);
+            currentTACAssignment = null;
 
         }
         private triple translateTACExpression()
@@ -1787,8 +1797,16 @@ namespace compilerDEMO
         }
         private void translateTACNestedStatement()
         {
-            if (curentToken.type == "begin") translateTACCompoundStatement();
-            else { translateTACStatement(); match("分号"); }
+            tacNestedDepth++;
+            try
+            {
+                if (curentToken.type == "begin") translateTACCompoundStatement();
+                else { translateTACStatement(); match("分号"); }
+            }
+            finally
+            {
+                tacNestedDepth--;
+            }
         }
         private void translateTACCompoundStatement()
         {
@@ -1802,6 +1820,7 @@ namespace compilerDEMO
         #region TAC执行
         private int executionPointer;
         private int executionSteps;
+        private int executionLimit;
         private const int maxExecutionSteps = 100000;
 
         private void button5_Click(object sender, EventArgs e)
@@ -1818,12 +1837,12 @@ namespace compilerDEMO
 
             try
             {
-                // 仍使用原来的 TAC 翻译流程；只有完整翻译成功才开始执行。
+                // 仍使用原来的 TAC 翻译流程。
                 curentToken = nextInput();
                 debug(curentToken.ToString());
                 translateTACProgram();
                 translated = true;
-                executeTAC();
+                executeTAC(tacTable.NXQ);
                 print("执行完成，共执行 " + executionSteps + " 条四元式");
                 printExecutionTables();
             }
@@ -1837,20 +1856,35 @@ namespace compilerDEMO
                 }
                 else
                 {
-                    tacTable.dump(listBox1);
-                    print("分析错误：" + ex.Message);
+                    // 只执行最后一个完整顶层语句之前的四元式，
+                    // 避免进入未完成回填的 if 或 while。
+                    try
+                    {
+                        executeTAC(completedTACIndex);
+                        print("已执行错误前完整的顶层语句，共执行 " + executionSteps + " 条四元式");
+                        printExecutionTables();
+                    }
+                    catch (InvalidOperationException runEx)
+                    {
+                        print("执行中止，已完成 " + executionSteps + " 条四元式");
+                        printExecutionTables();
+                        print("运行错误：" + runEx.Message);
+                    }
+                    string context = currentTACAssignment == null ? "" : "给 " + currentTACAssignment + " 赋值时，";
+                    print("分析错误：" + context + ex.Message);
                 }
             }
         }
 
-        private void executeTAC()
+        private void executeTAC(int limit)
         {
             executionPointer = 0;
             executionSteps = 0;
+            executionLimit = limit;
             foreach (triple t in idenTable.table) { t.value = ""; t.isInitialized = false; }
             foreach (triple t in tempVarTable.table) { t.value = ""; t.isInitialized = false; }
 
-            while (executionPointer < tacTable.NXQ)
+            while (executionPointer < executionLimit)
             {
                 if (executionSteps >= maxExecutionSteps)
                     throw new InvalidOperationException("执行超过 " + maxExecutionSteps + " 步，可能存在无限循环");
@@ -1903,7 +1937,7 @@ namespace compilerDEMO
         private int getExecutionTarget(string target)
         {
             int result;
-            if (!int.TryParse(target, out result) || result < 0 || result > tacTable.NXQ)
+            if (!int.TryParse(target, out result) || result < 0 || result > executionLimit)
                 throw new InvalidOperationException("无效的跳转目标 " + target);
             return result;
         }

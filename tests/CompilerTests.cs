@@ -150,7 +150,30 @@ internal static class CompilerTests
             Check(run.Last().Contains("执行超过 100000 步"), "无限循环应在步数上限停止");
             run = Run(form, 5, "int $a$; $a$:=true");
             Check(run.Last().StartsWith("分析错误：") && !run.Any(x => x.Contains("执行完成")),
-                  "翻译失败时不能执行部分 TAC");
+                  "翻译失败时不应显示完整执行成功");
+            run = Run(form, 5, "bool $b$; int $x$; $b$:=false; $x$:=6*2; $x$:=$b$/11");
+            Check(run.Contains("$b$ | bool | false") && run.Contains("$x$ | int | 12") &&
+                  run.Contains("T0 | int | 12") && run.Last().Contains("给 $x$ 赋值时") &&
+                  run.Last().Contains("运算类型不匹配"),
+                  "后续类型错误时应执行之前完整的赋值并指出错误目标");
+            run = Run(form, 5, "int $x$; bool $b$; $x$:=5; $b$:=true; " +
+                "if($b$){$x$:=9}else{$x$:=$b$/11}; $x$:=3");
+            Check(run.Contains("$x$ | int | 5") && run.Contains("$b$ | bool | true") &&
+                  run.Last().Contains("给 $x$ 赋值时") && !run.Any(x => x.Contains("无效的跳转目标")),
+                  "条件语句未翻译完成时不能执行其部分分支");
+            run = Run(form, 5, "int $x$; bool $b$; $x$:=3; " +
+                "while($x$>0):{$x$:=$x$-1}; $x$:=$b$/11");
+            Check(run.Contains("$x$ | int | 0") && run.Last().Contains("给 $x$ 赋值时"),
+                  "错误前完整的循环应正常执行并允许跳转到片段末尾");
+            run = Run(form, 5, "int $x$; bool $b$; $x$:=1; " +
+                "if(false){$x$:=2}else{$x$:=3}; $x$:=$b$/11");
+            Check(run.Contains("$x$ | int | 3") && run.Last().Contains("给 $x$ 赋值时"),
+                  "错误前完整的条件语句应正常执行");
+            run = Run(form, 5, "int $x$,$z$; bool $b$; $z$:=0; $x$:=1/$z$; $x$:=$b$/11");
+            Check(run.Contains("$z$ | int | 0") && run.Contains("$x$ | int | 未赋值") &&
+                  run.Any(x => x.Contains("运行错误") && x.Contains("除数不能为 0")) &&
+                  run.Last().Contains("分析错误") && run.Last().Contains("运算类型不匹配"),
+                  "前面运行出错时应保留状态并同时指出后续分析错误");
             var executeButton = (Button)form.Controls.Find("button5", false)[0];
             var astButton = (Button)form.Controls.Find("button4", false)[0];
             Check(executeButton.Text == "执行TAC" && executeButton.Left >= astButton.Right &&
