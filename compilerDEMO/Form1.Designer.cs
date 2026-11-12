@@ -38,6 +38,7 @@
             this.button2 = new System.Windows.Forms.Button();
             this.button3 = new System.Windows.Forms.Button();
             this.button4 = new System.Windows.Forms.Button();
+            this.button5 = new System.Windows.Forms.Button();
             this.SuspendLayout();
             // 
             // contextMenuStrip1
@@ -60,7 +61,7 @@
             // 
             this.button1.Location = new System.Drawing.Point(15, 172);
             this.button1.Name = "button1";
-            this.button1.Size = new System.Drawing.Size(326, 107);
+            this.button1.Size = new System.Drawing.Size(267, 107);
             this.button1.TabIndex = 3;
             this.button1.Text = "词法分析";
             this.button1.UseVisualStyleBackColor = true;
@@ -94,9 +95,9 @@
             // 
             // button2
             // 
-            this.button2.Location = new System.Drawing.Point(367, 172);
+            this.button2.Location = new System.Drawing.Point(297, 172);
             this.button2.Name = "button2";
-            this.button2.Size = new System.Drawing.Size(326, 107);
+            this.button2.Size = new System.Drawing.Size(267, 107);
             this.button2.TabIndex = 5;
             this.button2.Text = "语法分析";
             this.button2.UseVisualStyleBackColor = true;
@@ -104,9 +105,9 @@
             // 
             // button3
             // 
-            this.button3.Location = new System.Drawing.Point(737, 172);
+            this.button3.Location = new System.Drawing.Point(579, 172);
             this.button3.Name = "button3";
-            this.button3.Size = new System.Drawing.Size(326, 107);
+            this.button3.Size = new System.Drawing.Size(267, 107);
             this.button3.TabIndex = 6;
             this.button3.Text = "语义分析TAC";
             this.button3.UseVisualStyleBackColor = true;
@@ -114,19 +115,30 @@
             // 
             // button4
             // 
-            this.button4.Location = new System.Drawing.Point(1084, 172);
+            this.button4.Location = new System.Drawing.Point(861, 172);
             this.button4.Name = "button4";
-            this.button4.Size = new System.Drawing.Size(326, 107);
+            this.button4.Size = new System.Drawing.Size(267, 107);
             this.button4.TabIndex = 7;
             this.button4.Text = "语义分析AST";
             this.button4.UseVisualStyleBackColor = true;
             this.button4.Click += new System.EventHandler(this.button4_Click);
+            //
+            // button5
+            //
+            this.button5.Location = new System.Drawing.Point(1143, 172);
+            this.button5.Name = "button5";
+            this.button5.Size = new System.Drawing.Size(267, 107);
+            this.button5.TabIndex = 8;
+            this.button5.Text = "执行TAC";
+            this.button5.UseVisualStyleBackColor = true;
+            this.button5.Click += new System.EventHandler(this.button5_Click);
             // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(9F, 18F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(1429, 829);
+            this.Controls.Add(this.button5);
             this.Controls.Add(this.button4);
             this.Controls.Add(this.button3);
             this.Controls.Add(this.button2);
@@ -151,6 +163,7 @@
         private System.Windows.Forms.Button button2;
         private System.Windows.Forms.Button button3;
         private System.Windows.Forms.Button button4;
+        private System.Windows.Forms.Button button5;
     }
 }
 

@@ -9,6 +9,7 @@ using System.Diagnostics.SymbolStore;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -62,6 +63,7 @@ namespace compilerDEMO
             public string type { get; set; }
             public string value { get; set; }
             public bool isIntegerLiteral { get; set; }
+            public bool isInitialized { get; set; }
 
             public triple(string name)
             {
@@ -1794,6 +1796,236 @@ namespace compilerDEMO
             match("begin");
             translateTACStatementSection();
             match("end");
+        }
+        #endregion
+
+        #region TAC执行
+        private int executionPointer;
+        private int executionSteps;
+        private const int maxExecutionSteps = 100000;
+
+        private void button5_Click(object sender, EventArgs e)
+        {
+            isDebug = true;
+            listBox1.Items.Clear();
+            listBox2.Items.Clear();
+            sourceProgram = textBox1.Text + "#";
+            pointer = 0;
+            idenTable = new identifierTable();
+            tempVarTable = new tempVariableTable();
+            tacTable = new midCodeTable();
+            bool translated = false;
+
+            try
+            {
+                // 仍使用原来的 TAC 翻译流程；只有完整翻译成功才开始执行。
+                curentToken = nextInput();
+                debug(curentToken.ToString());
+                translateTACProgram();
+                translated = true;
+                executeTAC();
+                print("执行完成，共执行 " + executionSteps + " 条四元式");
+                printExecutionTables();
+            }
+            catch (InvalidOperationException ex)
+            {
+                if (translated)
+                {
+                    print("执行中止，已完成 " + executionSteps + " 条四元式");
+                    printExecutionTables();
+                    print("运行错误：" + ex.Message);
+                }
+                else
+                {
+                    tacTable.dump(listBox1);
+                    print("分析错误：" + ex.Message);
+                }
+            }
+        }
+
+        private void executeTAC()
+        {
+            executionPointer = 0;
+            executionSteps = 0;
+            foreach (triple t in idenTable.table) { t.value = ""; t.isInitialized = false; }
+            foreach (triple t in tempVarTable.table) { t.value = ""; t.isInitialized = false; }
+
+            while (executionPointer < tacTable.NXQ)
+            {
+                if (executionSteps >= maxExecutionSteps)
+                    throw new InvalidOperationException("执行超过 " + maxExecutionSteps + " 步，可能存在无限循环");
+
+                TAC instruction = tacTable.table[executionPointer];
+                int nextPointer = executionPointer + 1;
+                try
+                {
+                    if (instruction.op == "declare")
+                    {
+                        // 声明已在生成四元式时加入标识符表。
+                    }
+                    else if (instruction.op == "assign")
+                    {
+                        triple source = getExecutionOperand(instruction.oprand1);
+                        setExecutionValue(instruction.result, source.type, source.value);
+                    }
+                    else if (instruction.op == "jump")
+                    {
+                        nextPointer = getExecutionTarget(instruction.result);
+                    }
+                    else if (instruction.op == "jnz")
+                    {
+                        triple condition = getExecutionOperand(instruction.oprand1);
+                        if (condition.type != "bool") throw new InvalidOperationException("跳转条件必须是 bool");
+                        if (condition.value == "true") nextPointer = getExecutionTarget(instruction.result);
+                    }
+                    else if (instruction.op == "not")
+                    {
+                        triple value = getExecutionOperand(instruction.oprand1);
+                        if (value.type != "bool") throw new InvalidOperationException("not 的操作数必须是 bool");
+                        setExecutionValue(instruction.result, "bool", value.value == "true" ? "false" : "true");
+                    }
+                    else
+                    {
+                        triple left = getExecutionOperand(instruction.oprand1);
+                        triple right = getExecutionOperand(instruction.oprand2);
+                        executeBinaryTAC(instruction, left, right);
+                    }
+                }
+                catch (InvalidOperationException ex)
+                {
+                    throw new InvalidOperationException("第 " + executionPointer + " 条四元式：" + ex.Message);
+                }
+                executionPointer = nextPointer;
+                executionSteps++;
+            }
+        }
+
+        private int getExecutionTarget(string target)
+        {
+            int result;
+            if (!int.TryParse(target, out result) || result < 0 || result > tacTable.NXQ)
+                throw new InvalidOperationException("无效的跳转目标 " + target);
+            return result;
+        }
+
+        private triple getExecutionVariable(string name)
+        {
+            triple result = idenTable.getIdentifierByName(name);
+            if (result != null) return result;
+            foreach (triple t in tempVarTable.table)
+                if (t.name == name) return t;
+            return null;
+        }
+
+        private triple getExecutionOperand(string operand)
+        {
+            if (operand == "true" || operand == "false")
+                return new triple(operand) { type = "bool", value = operand, isInitialized = true };
+            if (operand.Length >= 2 && operand[0] == '"' && operand[operand.Length - 1] == '"')
+                return new triple(operand) { type = "string", value = operand.Substring(1, operand.Length - 2), isInitialized = true };
+            if (operand.Length > 0 && operand.All(c => c >= '0' && c <= '9'))
+                return new triple(operand) { type = "int", value = operand, isInitialized = true };
+
+            triple result = getExecutionVariable(operand);
+            if (result == null) throw new InvalidOperationException("未知操作数 " + operand);
+            if (!result.isInitialized) throw new InvalidOperationException("变量尚未赋值：" + operand);
+            return result;
+        }
+
+        private void setExecutionValue(string name, string type, string value)
+        {
+            triple target = getExecutionVariable(name);
+            if (target == null) throw new InvalidOperationException("未知结果变量 " + name);
+            if (target.type != type) throw new InvalidOperationException("结果类型不匹配：" + name);
+            target.value = value;
+            target.isInitialized = true;
+        }
+
+        private BigInteger getExecutionNumber(triple value)
+        {
+            if (value.type == "bool") return value.value == "true" ? BigInteger.One : BigInteger.Zero;
+            if (value.type == "int") return BigInteger.Parse(value.value);
+            throw new InvalidOperationException("操作数不是整数或布尔值");
+        }
+
+        private void executeBinaryTAC(TAC instruction, triple left, triple right)
+        {
+            string op = instruction.op;
+            if (op == "and" || op == "or")
+            {
+                if (left.type != "bool" || right.type != "bool")
+                    throw new InvalidOperationException("逻辑运算的操作数必须是 bool");
+                bool a = left.value == "true";
+                bool b = right.value == "true";
+                bool result = op == "and" ? a && b : a || b;
+                setExecutionValue(instruction.result, "bool", result ? "true" : "false");
+                return;
+            }
+
+            if (op == "lt" || op == "gt" || op == "lte" || op == "gte" || op == "eq" || op == "noteq")
+            {
+                if (left.type != right.type) throw new InvalidOperationException("关系运算类型不匹配");
+                int comparison = left.type == "string"
+                    ? left.value.Length.CompareTo(right.value.Length)
+                    : getExecutionNumber(left).CompareTo(getExecutionNumber(right));
+                bool result = op == "lt" ? comparison < 0 : op == "gt" ? comparison > 0 :
+                              op == "lte" ? comparison <= 0 : op == "gte" ? comparison >= 0 :
+                              op == "eq" ? comparison == 0 : comparison != 0;
+                setExecutionValue(instruction.result, "bool", result ? "true" : "false");
+                return;
+            }
+
+            if (left.type == "string")
+            {
+                if (op == "add" && right.type == "string")
+                    setExecutionValue(instruction.result, "string", left.value + right.value);
+                else if (op == "mul" && right.type == "int")
+                {
+                    BigInteger count = getExecutionNumber(right);
+                    int repeats = count > 2 ? 2 : (int)count;
+                    string value = "";
+                    for (int i = 0; i < repeats; i++) value += left.value;
+                    setExecutionValue(instruction.result, "string", value);
+                }
+                else throw new InvalidOperationException("字符串运算类型不匹配");
+                return;
+            }
+
+            if (left.type != right.type) throw new InvalidOperationException("算术运算类型不匹配");
+            BigInteger number1 = getExecutionNumber(left);
+            BigInteger number2 = getExecutionNumber(right);
+            BigInteger number;
+            if (op == "add") number = number1 + number2;
+            else if (op == "sub") number = BigInteger.Max(BigInteger.Zero, number1 - number2);
+            else if (op == "mul") number = number1 * number2;
+            else if (op == "div" || op == "mod")
+            {
+                if (number2.IsZero) throw new InvalidOperationException("除数不能为 0");
+                number = op == "div" ? number1 / number2 : number1 % number2;
+            }
+            else throw new InvalidOperationException("未知四元式操作符 " + op);
+
+            string text = number.ToString();
+            if (op == "mul" && text.Length > 4) text = text.Substring(0, 4);
+            setExecutionValue(instruction.result, "int", text);
+        }
+
+        private void printExecutionTables()
+        {
+            print("标识符表：");
+            printExecutionTable(idenTable.table);
+            print("临时变量表：");
+            printExecutionTable(tempVarTable.table);
+        }
+
+        private void printExecutionTable(List<triple> table)
+        {
+            print("name | type | value");
+            foreach (triple t in table)
+            {
+                string value = !t.isInitialized ? "未赋值" : t.type == "string" ? "\"" + t.value + "\"" : t.value;
+                print(t.name + " | " + t.type + " | " + value);
+            }
         }
         #endregion
 

@@ -113,6 +113,53 @@ internal static class CompilerTests
                   "成功分析不应显示前一次的部分结果");
             syntax = Run(form, 2, "int $q$; $q$:=");
             Check(!syntax.Any(x => x.Contains("(declare,")), "语法分析不应输出上一次的 TAC");
+
+            string[] run = Run(form, 5, "int $a$; $a$:=3*4");
+            Check(run.Contains("执行完成，共执行 3 条四元式") &&
+                  run.Contains("$a$ | int | 12") && run.Contains("T0 | int | 12"),
+                  "执行乘法时应计算临时变量和赋值结果");
+            run = Run(form, 5, "int $a$,$b$,$c$,$d$; $a$:=123*456; $b$:=5-9; $c$:=7/2; $d$:=7%2");
+            Check(run.Contains("$a$ | int | 5608") && run.Contains("$b$ | int | 0") &&
+                  run.Contains("$c$ | int | 3") && run.Contains("$d$ | int | 1"),
+                  "乘法前四位、减法下限、整除或取余执行错误");
+            run = Run(form, 5, "int $a$,$b$; $a$:=12345678901234567890+1; $b$:=12345678901234567890*9");
+            Check(run.Contains("$a$ | int | 12345678901234567891") && run.Contains("$b$ | int | 1111"),
+                  "大整数不能在乘法截断之前溢出");
+            run = Run(form, 5, "int $n$; bool $b$; $n$:=true+true; $b$:=not false and true or false");
+            Check(run.Contains("$n$ | int | 2") && run.Contains("$b$ | bool | true"),
+                  "布尔值数值运算或逻辑运算执行错误");
+            run = Run(form, 5, "string $s$,$empty$; bool $eq$,$lt$; " +
+                "$s$:=\"abc\"*9; $empty$:=\"\"; $eq$:=(\"ab\"==\"xy\"); $lt$:=(\"\"<\"z\")");
+            Check(run.Contains("$s$ | string | \"abcabc\"") && run.Contains("$empty$ | string | \"\"") &&
+                  run.Contains("$eq$ | bool | true") && run.Contains("$lt$ | bool | true"),
+                  "字符串重复上限、空字符串或按长度比较错误");
+            run = Run(form, 5, "int $s$,$z$; $z$:=0; $s$:=8/$z$");
+            Check(run.Contains("$z$ | int | 0") && run.Contains("$s$ | int | 未赋值") &&
+                  run.Last().Contains("运行错误") && run.Last().Contains("除数不能为 0"),
+                  "运行时应检测通过变量产生的除零，并保留此前状态");
+            run = Run(form, 5, "int $s$,$z$; $z$:=0; $s$:=0; if(false){$s$:=7/$z$}else{$s$:=5}");
+            Check(run.Contains("$s$ | int | 5") && !run.Any(x => x.Contains("错误")),
+                  "未执行的分支不能产生运行时除零错误");
+            run = Run(form, 5, "int $x$; $x$:=3; while($x$>0):{$x$:=$x$-1}");
+            Check(run.Contains("$x$ | int | 0") && run.Contains("T0 | bool | false"),
+                  "循环应重复计算条件并更新变量");
+            run = Run(form, 5, "int $a$,$b$; $a$:=$b$");
+            Check(run.Last().Contains("变量尚未赋值：$b$") && run.Contains("$a$ | int | 未赋值"),
+                  "读取未赋值变量应报告运行错误");
+            run = Run(form, 5, "int $a$; $a$:=1; while(true):{$a$:=$a$}");
+            Check(run.Last().Contains("执行超过 100000 步"), "无限循环应在步数上限停止");
+            run = Run(form, 5, "int $a$; $a$:=true");
+            Check(run.Last().StartsWith("分析错误：") && !run.Any(x => x.Contains("执行完成")),
+                  "翻译失败时不能执行部分 TAC");
+            var executeButton = (Button)form.Controls.Find("button5", false)[0];
+            var astButton = (Button)form.Controls.Find("button4", false)[0];
+            Check(executeButton.Text == "执行TAC" && executeButton.Left >= astButton.Right &&
+                  executeButton.Right <= form.ClientSize.Width, "执行按钮的布局不正确");
+            ((TextBox)form.Controls.Find("textBox1", false)[0]).Text = "int $x$; $x$:=2*3";
+            typeof(Button).GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic)
+                .Invoke(executeButton, new object[] { EventArgs.Empty });
+            Check(((ListBox)form.Controls.Find("listBox1", false)[0]).Items.Cast<object>()
+                  .Any(x => x.ToString() == "$x$ | int | 6"), "执行按钮没有连接到执行功能");
         }
         Console.WriteLine("通过 " + count + " 项检查");
     }
